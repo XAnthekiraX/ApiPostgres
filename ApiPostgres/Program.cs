@@ -179,7 +179,7 @@ app.MapGet("/sensores/porRango", async (DateTime startDate, DateTime endDate, Se
     // Ejecutar la consulta con FromSqlRaw usando parámetros
     var datos = await db.datos_sensores
         .FromSqlRaw(
-            "SELECT * FROM datos_sensores WHERE fecha_dato BETWEEN @startDate AND @endDate::date + INTERVAL '1 days'",
+            "SELECT * FROM datos_sensores WHERE fecha_dato BETWEEN @startDate AND @endDate::date + INTERVAL '2 days'",
             new NpgsqlParameter("@startDate", NpgsqlTypes.NpgsqlDbType.TimestampTz) { Value = startDateUtc },
             new NpgsqlParameter("@endDate", NpgsqlTypes.NpgsqlDbType.TimestampTz) { Value = endDateUtc })
         .ToListAsync();
