@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.10.35122.118
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DashBoardSensors", "DashBoardSensors\DashBoardSensors.csproj", "{80F6FF44-5C27-4D71-B599-70191EEBB405}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{80F6FF44-5C27-4D71-B599-70191EEBB405}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{80F6FF44-5C27-4D71-B599-70191EEBB405}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{80F6FF44-5C27-4D71-B599-70191EEBB405}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{80F6FF44-5C27-4D71-B599-70191EEBB405}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {38E65A82-CE65-4E11-B607-7436CE1AFD38}
+	EndGlobalSection
+EndGlobal

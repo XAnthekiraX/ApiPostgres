@@ -1,0 +1,36 @@
+﻿@{
+    ViewData["Title"] = "Consulta de Datos de Sensores";
+}
+
+<div class="text-center mt-4">
+    <h1>Visualización de Sensores</h1>
+</div>
+
+<div class="container mt-5">
+    <h2>Consulta de Datos</h2>
+    <form class="row" method="post" action="/Home/QueryData">
+        <div class="col-md-6 mb-3">
+            <label for="startDate" class="form-label">Fecha de Inicio</label>
+            <input type="date" class="form-control" id="startDate" name="StartDate" required>
+        </div>
+        <div class="col-md-6 mb-3">
+            <label for="endDate" class="form-label">Fecha de Fin</label>
+            <input type="date" class="form-control" id="endDate" name="EndDate" required>
+        </div>
+        <div class="col-md-6 mb-3">
+            <label for="timeRange" class="form-label">Rango de Hora</label>
+            <input type="time" class="form-control" id="timeRange" name="TimeRange">
+        </div>
+        <div class="col-md-6 mb-3">
+            <label for="weekRange" class="form-label">Rango de Semana</label>
+            <input type="week" class="form-control" id="weekRange" name="WeekRange">
+        </div>
+        <div class="col-md-6 mb-3">
+            <label for="monthRange" class="form-label">Rango de Mes</label>
+            <input type="month" class="form-control" id="monthRange" name="MonthRange">
+        </div>
+        <div class="col-12">
+            <button type="submit" class="btn btn-primary">Consultar</button>
+        </div>
+    </form>
+</div>
