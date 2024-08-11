@@ -1,6 +1,6 @@
-﻿// Archivo: SensorService.cs
-
+﻿using DashBoardSensors.Models;
 using DashBoardSensors.Models;
+using System;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Threading.Tasks;
@@ -14,47 +14,113 @@ namespace DashBoardSensors.Services
         public SensorService(HttpClient httpClient)
         {
             _httpClient = httpClient;
-            _httpClient.BaseAddress = new Uri("https://localhost:7038"); // Asegúrate de que la URL base sea correcta
+            _httpClient.BaseAddress = new Uri("https://localhost:7038");
         }
 
-        public async Task<DeviceDataResponse> GetSensorDataAsync(int id)
+
+
+        public async Task<DeviceDataResponse> GetDeviceDataHourRangeAsync(DateTime date, string hourStart, string hourEnd)
         {
-            var response = await _httpClient.GetAsync($"/sensores/{id}");
-
-            if (!response.IsSuccessStatusCode)
+            try
             {
-                return null;
-            }
 
-            var sensorData = await response.Content.ReadFromJsonAsync<DeviceDataResponse>();
-            return sensorData;
+                string formattedDate = date.ToString("yyyy-MM-dd");
+                var response = await _httpClient.GetAsync($"/sensores/porRangoHoras?fecha={formattedDate}&horaInicio={hourStart}&horaFin={hourEnd}");
+
+                response.EnsureSuccessStatusCode();
+
+                var deviceDataResponse = await response.Content.ReadFromJsonAsync<DeviceDataResponse>();
+
+                return deviceDataResponse;
+            }
+            catch (HttpRequestException ex)
+            {
+                Console.WriteLine($"Error en la solicitud HTTP: {ex.Message}");
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error inesperado: {ex.Message}");
+                throw;
+            }
         }
 
-        public async Task<DeviceDataResponse> GetSensorDataHourAsync(DateTime hora)
+        public async Task<DeviceDataResponse> GetDeviceDataDateRangeAsync(DateTime dateStart, DateTime dateEnd)
         {
-            var horaFormatted = hora.ToString("HH:mm:ss"); // Asegúrate de que el formato coincida con el esperado en la API
-            var response = await _httpClient.GetAsync($"/sensores/porHora?hora={horaFormatted}");
-
-            if (!response.IsSuccessStatusCode)
+            try
             {
-                return null;
-            }
+                string formattedDateStart = dateStart.ToString("yyyy-MM-dd");
+                string formattedDateEnd = dateEnd.ToString("yyyy-MM-dd");
+                var response = await _httpClient.GetAsync($"/sensores/porRangoFecha?startDate={formattedDateStart}&endDate={formattedDateEnd}");
 
-            var sensorData = await response.Content.ReadFromJsonAsync<DeviceDataResponse>();
-            return sensorData;
+                response.EnsureSuccessStatusCode();
+
+                var deviceDataResponse = await response.Content.ReadFromJsonAsync<DeviceDataResponse>();
+
+                return deviceDataResponse;
+            }
+            catch (HttpRequestException ex)
+            {
+                Console.WriteLine($"Error en la solicitud HTTP: {ex.Message}");
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error inesperado: {ex.Message}");
+                throw;
+            }
         }
-        public async Task<DeviceDataResponse> GetSensorDataDateAsync(DateTime date)
+
+        public async Task<DeviceDataResponse> GetDeviceDataWeekRangeAsync(DateTime weekEnd)
         {
-            var datteFormatted = date.ToString("yyyy-mm-dd"); // Asegúrate de que el formato coincida con el esperado en la API
-            var response = await _httpClient.GetAsync($"/sensores/porfecha?fecha={datteFormatted}");
-
-            if (!response.IsSuccessStatusCode)
+            try
             {
-                return null;
-            }
+                string weekDateFormatt = weekEnd.ToString("yyyy-MM-dd");
+                var response = await _httpClient.GetAsync($"/sensores/porSemana?fechaInicio={weekDateFormatt}");
 
-            var sensorData = await response.Content.ReadFromJsonAsync<DeviceDataResponse>();
-            return sensorData;
+                response.EnsureSuccessStatusCode();
+
+                var deviceDataResponse = await response.Content.ReadFromJsonAsync<DeviceDataResponse>();
+
+                return deviceDataResponse;
+            }
+            catch (HttpRequestException ex)
+            {
+                Console.WriteLine($"Error en la solicitud HTTP: {ex.Message}");
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error inesperado: {ex.Message}");
+                throw;
+            }
+        }
+
+        public async Task<DeviceDataResponse> GetDeviceDataMontRangeAsync(DateTime monthStart, DateTime monthEnd)
+        {
+            try
+            {
+
+                string monthDateFormattStart = monthStart.ToString("yyyy-MM-dd");
+                string monthDateFormattEnd = monthEnd.ToString("yyyy-MM-dd");
+                var response = await _httpClient.GetAsync($"/sensores/porMes?fechaInicio={monthDateFormattStart}&fechaFin={monthDateFormattEnd}");
+
+                response.EnsureSuccessStatusCode();
+
+                var deviceDataResponse = await response.Content.ReadFromJsonAsync<DeviceDataResponse>();
+
+                return deviceDataResponse;
+            }
+            catch (HttpRequestException ex)
+            {
+                Console.WriteLine($"Error en la solicitud HTTP: {ex.Message}");
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error inesperado: {ex.Message}");
+                throw;
+            }
         }
     }
 }

@@ -2,26 +2,20 @@
 
 namespace DashBoardSensors.Models
 {
-    public class DeviceValues
-    {
-        public List<double?> AvgData { get; set; }  // Cambiado a double?
-        public List<double?> MinData { get; set; }  // Cambiado a double?
-        public List<double?> MaxData { get; set; }  // Cambiado a double?
-    }
-
+  
 
     public class DeviceData
     {
-        public string ParameterCode { get; set; }
-        public string ParameterName { get; set; }
-        public string ParameterUnit { get; set; }
-        public string ParameterAbbreviation { get; set; }
+        public string CodigoParametro { get; set; }  
+        public string NombreParametro { get; set; }  
+        public string UnidadParametro { get; set; }  
+        public string AbreviacionParametro { get; set; }  
         public DeviceValues Values { get; set; }
     }
 
     public class DeviceDataResponse
     {
-        public List<string> DeviceDates { get; set; }
-        public List<DeviceData> DeviceData { get; set; }
+        public List<string> DeviceDates { get; set; } 
+        public List<DeviceData> DeviceData { get; set; }  
     }
 }
