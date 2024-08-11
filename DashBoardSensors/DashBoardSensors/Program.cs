@@ -1,7 +1,18 @@
+using DashBoardSensors.Services;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddControllersWithViews();
+
+// Archivo: Program.cs
+
+builder.Services.AddHttpClient<ISensorService, SensorService>(client =>
+{
+    client.BaseAddress = new Uri("https://localhost:7038"); // Configura tu URL base aquí
+});
+
+
 
 var app = builder.Build();
 

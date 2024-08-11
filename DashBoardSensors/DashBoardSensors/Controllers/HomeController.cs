@@ -1,32 +1,51 @@
-﻿using DashBoardSensors.Models;
+﻿// Archivo: HomeController.cs
+
+using DashBoardSensors.Services; // Agrega esta línea si no está presente
 using Microsoft.AspNetCore.Mvc;
-using System.Diagnostics;
+using System.Threading.Tasks;
 
 namespace DashBoardSensors.Controllers
 {
     public class HomeController : Controller
     {
-        private readonly ILogger<HomeController> _logger;
+        private readonly ISensorService _sensorService;
 
-        public HomeController(ILogger<HomeController> logger)
+        public HomeController(ISensorService sensorService)
         {
-            _logger = logger;
+            _sensorService = sensorService;
         }
 
-        public IActionResult Index()
+        [HttpGet]
+        public async Task<IActionResult> Index(int sensorId)
         {
+            var sensorData = await _sensorService.GetSensorDataAsync(sensorId);
+            return View(sensorData);
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> PorHoraIndex(string horaStr)
+        {
+            if (DateTime.TryParse(horaStr, out var hora))
+            {
+                var sensorData = await _sensorService.GetSensorDataHourAsync(hora);
+                return View(sensorData);
+            }
+
+            ViewBag.ErrorMessage = "Formato de hora inválido. Usa un formato válido como 'yyyy-MM-ddTHH:mm'.";
             return View();
         }
 
-        public IActionResult Privacy()
+        [HttpGet]
+        public async Task<IActionResult> PorFechaIndex(string dateStr)
         {
-            return View();
-        }
+            if (DateTime.TryParse(dateStr, out var date))
+            {
+                var sensorData = await _sensorService.GetSensorDataHourAsync(date);
+                return View(sensorData);
+            }
 
-        [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
-        public IActionResult Error()
-        {
-            return View(new ErrorViewModel { RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier });
+            ViewBag.ErrorMessage = "Formato de hora inválido. Usa un formato válido como 'yyyy-MM-dd'.";
+            return View();
         }
     }
 }

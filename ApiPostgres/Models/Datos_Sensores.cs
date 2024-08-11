@@ -8,5 +8,8 @@
         public string? nombre_parametro { get; set; }  // Correspondiente a 'nombre_parametro'
         public DateTime fecha_dato { get; set; }  // Correspondiente a 'fecha_dato'
         public float? valor_numero { get; set; }  // Correspondiente a 'valor_numero'
+        public string? descripcion_corta { get; set; }  // Correspondiente a 'descripcion_corta'
+        public string? unidad { get; set; }  // Correspondiente a 'unidad'
     }
 }
+

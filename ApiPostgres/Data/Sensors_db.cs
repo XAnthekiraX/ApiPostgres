@@ -9,8 +9,8 @@ namespace ApiPostgres.Data
         {
         }
 
+        public DbSet<SensorDataResult> SensorDataResults { get; set; }
         public DbSet<Datos_Sensores> datos_sensores { get; set; }
-
         public DbSet<Parametros_Sensores> parametros_sensores { get; set; }
     }
 }

@@ -1,20 +1,23 @@
 using ApiPostgres.Data;
 using ApiPostgres.Models;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-
 builder.Services.AddControllers();
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var connectionString = builder.Configuration.GetConnectionString("PostgreSQLConnection");
 builder.Services.AddDbContext<Sensors_db>(options =>
-options.UseNpgsql(connectionString));
+    options.UseNpgsql(connectionString));
 
 var app = builder.Build();
 
@@ -27,278 +30,341 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-
-
 app.MapGet("/sensores/{id}", async (int id, Sensors_db db) =>
 {
-    // Obtener datos por ID
-    var datos = await db.datos_sensores
-        .Where(d => d.id == id)
-        .ToListAsync();
-
-    if (datos.Count == 0)
+    try
     {
-        return Results.NotFound("No se encontraron datos para el ID especificado.");
-    }
+        // Realiza el JOIN entre datos_sensores y parametros_sensores
+        var datos = await db.datos_sensores
+            .Join(db.parametros_sensores,
+                  ds => ds.parametro_sensores_id,
+                  ps => ps.id,
+                  (ds, ps) => new
+                  {
+                      ds.id,
+                      ds.codigo_parametro,
+                      ps.descripcion_corta,
+                      ds.nombre_parametro,
+                      ds.fecha_dato,
+                      ds.valor_numero,
+                      ps.unidad // Asegúrate de que el nombre coincida con el nombre en el modelo
+                  })
+            .Where(d => d.id == id)
+            .ToListAsync();
 
-    // Agrupar datos por parámetro
-    var groupedData = datos
-        .GroupBy(d => d.codigo_parametro)
-        .Select(g => new DeviceData
+        if (!datos.Any())
         {
-            ParameterCode = g.Key.ToString(),
-            ParameterName = g.FirstOrDefault()?.nombre_parametro ?? "",
-            ParameterUnit = g.FirstOrDefault()?.valor_numero?.ToString() ?? "",
-            ParameterAbbreviation = g.FirstOrDefault()?.nombre_parametro?.Substring(0, 4) ?? "", // Just an example
-            Values = new Values
+            return Results.NotFound("No se encontraron datos para el ID especificado.");
+        }
+
+        var groupedData = datos
+            .GroupBy(d => d.codigo_parametro)
+            .Select(g => new DeviceData
             {
-                AvgData = new List<double> { g.Average(d => (double)d.valor_numero) }, // Promedio en una lista
-                MinData = new List<double> { g.Min(d => (double)d.valor_numero) }, // Mínimo en una lista
-                MaxData = new List<double> { g.Max(d => (double)d.valor_numero) }  // Máximo en una lista
-            }
-        }).ToList();
+                CodigoParametro = g.Key.ToString(),
+                NombreParametro = g.FirstOrDefault()?.nombre_parametro ?? "",
+                UnidadParametro = g.FirstOrDefault()?.unidad ?? "", // Usa la propiedad correcta
+                AbreviacionParametro = g.FirstOrDefault()?.descripcion_corta?.Substring(0, 4) ?? "",
+                Values = new DeviceValues
+                {
+                    AvgData = new List<float> { (float)g.Where(d => d.valor_numero.HasValue).Average(d => d.valor_numero.Value) },
+                    MinData = new List<float> { (float)g.Where(d => d.valor_numero.HasValue).Min(d => d.valor_numero.Value) },
+                    MaxData = new List<float> { (float)g.Where(d => d.valor_numero.HasValue).Max(d => d.valor_numero.Value) }
+                }
+            }).ToList();
 
-    // Crear la respuesta final
-    var response = new DeviceDataResponse
+        var response = new DeviceDataResponse
+        {
+            DeviceDates = datos.Select(d => d.fecha_dato.ToString("yyyy-MM-dd HH:mm:ss")).Distinct().ToList(),
+            DeviceData = groupedData
+        };
+
+        return Results.Ok(response);
+    }
+    catch (Exception ex)
     {
-        DeviceDates = datos.Select(d => d.fecha_dato.ToString("yyyy-MM-dd HH:mm:ss")).Distinct().ToList(),
-        DeviceData = groupedData
-    };
-
-    return Results.Ok(response);
+        return Results.Problem(detail: ex.Message, statusCode: 500);
+    }
 });
 
 
-app.MapGet("/sensores/porHora", async (string hora, Sensors_db db) =>
+app.MapGet("/sensores/porRangoHoras", async (DateTime fecha, string horaInicio, string horaFin, Sensors_db db) =>
 {
-    // Intentar convertir la cadena de hora en un TimeOnly
-    if (!TimeOnly.TryParse(hora, out TimeOnly horaOnly))
+    // Validar los formatos de hora
+    if (!TimeOnly.TryParse(horaInicio, out TimeOnly horaInicioOnly) ||
+        !TimeOnly.TryParse(horaFin, out TimeOnly horaFinOnly))
     {
         return Results.BadRequest("Formato de hora inválido. Utiliza un formato válido como 'HH:MM:SS'.");
     }
 
-    // Convertir la hora a formato adecuado para la consulta SQL
-    var horaFormatted = horaOnly.ToString("HH:mm:ss");
+    // Combinar la fecha con las horas para crear DateTime
+    DateTime fechaHoraInicio = fecha.Add(horaInicioOnly.ToTimeSpan());
+    DateTime fechaHoraFin = fecha.Add(horaFinOnly.ToTimeSpan());
 
-    // Consultar datos usando SQL crudo
-    var datos = await db.datos_sensores
-        .FromSqlRaw("SELECT *  FROM datos_sensores AS d WHERE d.fecha_dato::time='" + horaFormatted + "'")
-        .ToListAsync();
-
-
-    if (datos.Count == 0)
+    try
     {
-        return Results.NotFound("No se encontraron datos para la hora especificada.");
-    }
+        var sqlQuery = @"
+            SELECT ds.id, ds.codigo_parametro, ps.descripcion_corta, ds.nombre_parametro, ds.fecha_dato, ds.valor_numero, ps.unidad
+            FROM datos_sensores ds
+            JOIN parametros_sensores ps ON ds.codigo_parametro = ps.codigo_parametro
+            WHERE ds.fecha_dato BETWEEN @fechaHoraInicio AND @fechaHoraFin";
 
-    var groupedData = datos
-        .GroupBy(d => d.codigo_parametro)
-        .Select(g => new DeviceData
+        // Parámetros para el rango de fecha y horas
+        var fechaHoraInicioParam = new NpgsqlParameter("@fechaHoraInicio", fechaHoraInicio);
+        var fechaHoraFinParam = new NpgsqlParameter("@fechaHoraFin", fechaHoraFin);
+
+        var datos = await db.SensorDataResults
+            .FromSqlRaw(sqlQuery, fechaHoraInicioParam, fechaHoraFinParam)
+            .ToListAsync();
+
+        if (datos.Count == 0)
         {
-            ParameterCode = g.Key.ToString(),
-            ParameterName = g.FirstOrDefault()?.nombre_parametro ?? "",
-            ParameterUnit = g.FirstOrDefault()?.valor_numero?.ToString() ?? "",
-            ParameterAbbreviation = g.FirstOrDefault()?.nombre_parametro?.Substring(0, 4) ?? "", // Just an example
-            Values = new Values
+            return Results.NotFound("No se encontraron datos para el rango de horas especificado.");
+        }
+
+        var groupedData = datos
+            .GroupBy(d => d.codigo_parametro)
+            .Select(g => new DeviceData
             {
-                AvgData = new List<double> { g.Average(d => (double)d.valor_numero) }, // Promedio en una lista
-                MinData = new List<double> { g.Min(d => (double)d.valor_numero) }, // Mínimo en una lista
-                MaxData = new List<double> { g.Max(d => (double)d.valor_numero) }  // Máximo en una lista
-            }
-        }).ToList();
+                CodigoParametro = g.Key.ToString(),
+                NombreParametro = g.FirstOrDefault()?.nombre_parametro ?? "",
+                UnidadParametro = g.FirstOrDefault()?.unidad ?? "",
+                AbreviacionParametro = g.FirstOrDefault()?.descripcion_corta?.Substring(0, 4) ?? "",
+                Values = new DeviceValues
+                {
+                    AvgData = new List<float> { (float)g.Where(d => d.valor_numero.HasValue).Average(d => d.valor_numero.Value) },
+                    MinData = new List<float> { (float)g.Where(d => d.valor_numero.HasValue).Min(d => d.valor_numero.Value) },
+                    MaxData = new List<float> { (float)g.Where(d => d.valor_numero.HasValue).Max(d => d.valor_numero.Value) }
+                }
+            }).ToList();
 
-    // Crear la respuesta final
-    var response = new DeviceDataResponse
+        var response = new DeviceDataResponse
+        {
+            DeviceDates = datos.Select(d => d.fecha_dato.ToString("yyyy-MM-dd HH:mm:ss")).Distinct().ToList(),
+            DeviceData = groupedData
+        };
+
+        return Results.Ok(response);
+    }
+    catch (Exception ex)
     {
-        DeviceDates = datos.Select(d => d.fecha_dato.ToString("yyyy-MM-dd HH:mm:ss")).Distinct().ToList(),
-        DeviceData = groupedData
-    };
+        // Registrar el error
+        Console.WriteLine($"Error: {ex.Message}\n{ex.StackTrace}");
 
-    return Results.Ok(response);
+        return Results.Problem(detail: ex.Message, statusCode: 500);
+    }
 });
 
-
-
-app.MapGet("/sensores/porFecha", async (string fecha, Sensors_db db) =>
+app.MapGet("/sensores/porRangoFecha", async (DateTime startDate, DateTime endDate, Sensors_db db) =>
 {
-    // Intentar convertir la cadena de fecha en un DateTime
-    if (!DateTime.TryParse(fecha, out DateTime fechaDateTime))
-    {
-        return Results.BadRequest("Formato de fecha inválido. Utiliza un formato válido como 'YYYY-MM-DD'.");
-    }
-
-    // Convertir la fecha a formato adecuado para la consulta SQL
-    var fechaFormatted = fechaDateTime.ToString("yyyy-MM-dd");
-
-    // Ejecutar la consulta con FromSqlRaw usando parámetros
-    var datos = await db.datos_sensores
-        .FromSqlRaw("SELECT * FROM datos_sensores WHERE date_trunc('day', fecha_dato) = @fechaFormatted::date",
-            new NpgsqlParameter("@fechaFormatted", NpgsqlTypes.NpgsqlDbType.Date) { Value = fechaDateTime.Date })
-        .ToListAsync();
-
-    if (datos.Count == 0)
-    {
-        return Results.NotFound("No se encontraron datos para la fecha especificada.");
-    }
-
-    var groupedData = datos
-        .GroupBy(d => d.codigo_parametro)
-        .Select(g => new DeviceData
-        {
-            ParameterCode = g.Key.ToString(),
-            ParameterName = g.FirstOrDefault()?.nombre_parametro ?? "",
-            ParameterUnit = g.FirstOrDefault()?.valor_numero?.ToString() ?? "",
-            ParameterAbbreviation = g.FirstOrDefault()?.nombre_parametro?.Substring(0, 4) ?? "", // Just an example
-            Values = new Values
-            {
-                AvgData = new List<double> { g.Average(d => (double)d.valor_numero) }, // Promedio en una lista
-                MinData = new List<double> { g.Min(d => (double)d.valor_numero) }, // Mínimo en una lista
-                MaxData = new List<double> { g.Max(d => (double)d.valor_numero) }  // Máximo en una lista
-            }
-        }).ToList();
-
-    // Crear la respuesta final
-    var response = new DeviceDataResponse
-    {
-        DeviceDates = datos.Select(d => d.fecha_dato.ToString("yyyy-MM-dd HH:mm:ss")).Distinct().ToList(),
-        DeviceData = groupedData
-    };
-
-    return Results.Ok(response);
-});
-
-
-
-app.MapGet("/sensores/porRango", async (DateTime startDate, DateTime endDate, Sensors_db db) =>
-{
-
-    // Asegúrate de que las fechas se conviertan a UTC si es necesario
     var startDateUtc = DateTime.SpecifyKind(startDate, DateTimeKind.Utc);
     var endDateUtc = DateTime.SpecifyKind(endDate, DateTimeKind.Utc);
 
-    // Ejecutar la consulta con FromSqlRaw usando parámetros
-    var datos = await db.datos_sensores
-        .FromSqlRaw(
-            "SELECT * FROM datos_sensores WHERE fecha_dato BETWEEN @startDate AND @endDate::date + INTERVAL '2 days'",
-            new NpgsqlParameter("@startDate", NpgsqlTypes.NpgsqlDbType.TimestampTz) { Value = startDateUtc },
-            new NpgsqlParameter("@endDate", NpgsqlTypes.NpgsqlDbType.TimestampTz) { Value = endDateUtc })
-        .ToListAsync();
-
-     if (datos.Count == 0)
+    try
     {
-        return Results.NotFound("No se encontraron datos para la fecha especificada.");
+        var sqlQuery = @"
+            SELECT ds.id, ds.codigo_parametro, ps.descripcion_corta, ds.nombre_parametro, ds.fecha_dato, ds.valor_numero, ps.unidad
+            FROM datos_sensores ds
+            JOIN parametros_sensores ps ON ds.codigo_parametro = ps.codigo_parametro
+            WHERE  fecha_dato BETWEEN @startDate AND @endDate";
+
+        // Verificar el valor del parámetro
+        var dateStartParam = new NpgsqlParameter("@startDate", startDateUtc);
+        var dateEndParam = new NpgsqlParameter("@endDate", endDateUtc);
+
+        var datos = await db.SensorDataResults
+            .FromSqlRaw(sqlQuery, dateStartParam, dateEndParam)
+            .ToListAsync();
+
+        if (datos.Count == 0)
+        {
+            return Results.NotFound("No se encontraron datos para la hora especificada.");
+        }
+
+        var groupedData = datos
+            .GroupBy(d => d.codigo_parametro)
+            .Select(g => new DeviceData
+            {
+                CodigoParametro = g.Key.ToString(),
+                NombreParametro = g.FirstOrDefault()?.nombre_parametro ?? "",
+                UnidadParametro = g.FirstOrDefault()?.unidad ?? "",
+                AbreviacionParametro = g.FirstOrDefault()?.descripcion_corta?.Substring(0, 4) ?? "",
+                Values = new DeviceValues
+                {
+                    AvgData = new List<float> { (float)g.Where(d => d.valor_numero.HasValue).Average(d => d.valor_numero.Value) },
+                    MinData = new List<float> { (float)g.Where(d => d.valor_numero.HasValue).Min(d => d.valor_numero.Value) },
+                    MaxData = new List<float> { (float)g.Where(d => d.valor_numero.HasValue).Max(d => d.valor_numero.Value) }
+                }
+            }).ToList();
+
+        var response = new DeviceDataResponse
+        {
+            DeviceDates = datos.Select(d => d.fecha_dato.ToString("yyyy-MM-dd HH:mm:ss")).Distinct().ToList(),
+            DeviceData = groupedData
+        };
+
+        return Results.Ok(response);
     }
-
-    var groupedData = datos
-         .GroupBy(d => d.codigo_parametro)
-         .Select(g => new DeviceData
-         {
-             ParameterCode = g.Key.ToString(),
-             ParameterName = g.FirstOrDefault()?.nombre_parametro ?? "",
-             ParameterUnit = g.FirstOrDefault()?.valor_numero?.ToString() ?? "",
-             ParameterAbbreviation = g.FirstOrDefault()?.nombre_parametro?.Substring(0, 4) ?? "", // Just an example
-             Values = new Values
-             {
-                 AvgData = new List<double> { g.Average(d => (double)d.valor_numero) }, // Promedio en una lista
-                 MinData = new List<double> { g.Min(d => (double)d.valor_numero) }, // Mínimo en una lista
-                 MaxData = new List<double> { g.Max(d => (double)d.valor_numero) }  // Máximo en una lista
-             }
-         }).ToList();
-
-    // Crear la respuesta final
-    var response = new DeviceDataResponse
+    catch (Exception ex)
     {
-        DeviceDates = datos.Select(d => d.fecha_dato.ToString("yyyy-MM-dd HH:mm:ss")).Distinct().ToList(),
-        DeviceData = groupedData
-    };
+        // Registrar el error
+        Console.WriteLine($"Error: {ex.Message}\n{ex.StackTrace}");
 
-    return Results.Ok(response);
+        return Results.Problem(detail: ex.Message, statusCode: 500);
+    }
 });
-
 
 app.MapGet("/sensores/porSemana", async (DateTime fechaInicio, Sensors_db db) =>
 {
-
-    // Ejecutar la consulta con FromSqlRaw usando parámetros
-    var datos = await db.datos_sensores
-        .FromSqlRaw("WITH WeekRange AS (SELECT date_trunc('week', '"+fechaInicio+"'::date) AS week_start, date_trunc('week', '"+fechaInicio+"'::date) + INTERVAL '7 days' AS week_end) " +
-        "SELECT * FROM datos_sensores, WeekRange WHERE fecha_dato >= week_start AND fecha_dato < week_end + INTERVAL '7 days'")
-        .ToListAsync();
-
-    if (datos.Count == 0)
+    var fechaInicioUtc = DateTime.SpecifyKind(fechaInicio, DateTimeKind.Utc);
+    try
     {
-        return Results.NotFound("No se encontraron datos para la fecha especificada.");
-    }
+        var sqlQuery = @"
+             WITH WeekRange AS (
+                SELECT 
+                    date_trunc('week', @fechaInicio::date) AS week_start,
+                    date_trunc('week', @fechaInicio::date) + INTERVAL '7 days' AS week_end
+            )
+            SELECT 
+                ds.id, 
+                ds.codigo_parametro, 
+                ps.descripcion_corta, 
+                ds.nombre_parametro, 
+                ds.fecha_dato, 
+                ds.valor_numero, 
+                ps.unidad
+            FROM 
+                datos_sensores ds
+            JOIN 
+                parametros_sensores ps 
+                ON ds.codigo_parametro = ps.codigo_parametro
+            JOIN 
+                WeekRange wr
+                ON ds.fecha_dato >= wr.week_start 
+                AND ds.fecha_dato < wr.week_end
+            WHERE 
+                ds.fecha_dato >= wr.week_start 
+                AND ds.fecha_dato < wr.week_end";
 
-    var groupedData = datos
-        .GroupBy(d => d.codigo_parametro)
-        .Select(g => new DeviceData
+        // Verificar el valor del parámetro
+        var dateStartParam = new NpgsqlParameter("@fechaInicio", fechaInicioUtc);
+
+        var datos = await db.SensorDataResults
+            .FromSqlRaw(sqlQuery, dateStartParam)
+            .ToListAsync();
+
+        if (datos.Count == 0)
         {
-            ParameterCode = g.Key.ToString(),
-            ParameterName = g.FirstOrDefault()?.nombre_parametro ?? "",
-            ParameterUnit = g.FirstOrDefault()?.valor_numero?.ToString() ?? "",
-            ParameterAbbreviation = g.FirstOrDefault()?.nombre_parametro?.Substring(0, 4) ?? "", // Just an example
-            Values = new Values
+            return Results.NotFound("No se encontraron datos para la hora especificada.");
+        }
+
+        var groupedData = datos
+            .GroupBy(d => d.codigo_parametro)
+            .Select(g => new DeviceData
             {
-                AvgData = new List<double> { g.Average(d => (double)d.valor_numero) }, // Promedio en una lista
-                MinData = new List<double> { g.Min(d => (double)d.valor_numero) }, // Mínimo en una lista
-                MaxData = new List<double> { g.Max(d => (double)d.valor_numero) }  // Máximo en una lista
-            }
-        }).ToList();
+                CodigoParametro = g.Key.ToString(),
+                NombreParametro = g.FirstOrDefault()?.nombre_parametro ?? "",
+                UnidadParametro = g.FirstOrDefault()?.unidad ?? "",
+                AbreviacionParametro = g.FirstOrDefault()?.descripcion_corta?.Substring(0, 4) ?? "",
+                Values = new DeviceValues
+                {
+                    AvgData = new List<float> { (float)g.Where(d => d.valor_numero.HasValue).Average(d => d.valor_numero.Value) },
+                    MinData = new List<float> { (float)g.Where(d => d.valor_numero.HasValue).Min(d => d.valor_numero.Value) },
+                    MaxData = new List<float> { (float)g.Where(d => d.valor_numero.HasValue).Max(d => d.valor_numero.Value) }
+                }
+            }).ToList();
 
-    // Crear la respuesta final
-    var response = new DeviceDataResponse
-    {
-        DeviceDates = datos.Select(d => d.fecha_dato.ToString("yyyy-MM-dd HH:mm:ss")).Distinct().ToList(),
-        DeviceData = groupedData
-    };
+        var response = new DeviceDataResponse
+        {
+            DeviceDates = datos.Select(d => d.fecha_dato.ToString("yyyy-MM-dd HH:mm:ss")).Distinct().ToList(),
+            DeviceData = groupedData
+        };
 
-    return Results.Ok(response);
-});
-
-app.MapGet("/sensores/porMes", async (int mes, Sensors_db db) =>
-{
-
-    // Ejecutar la consulta con FromSqlRaw usando parámetros
-    var datos = await db.datos_sensores
-        .FromSqlRaw("SELECT * FROM datos_sensores WHERE EXTRACT(MONTH FROM fecha_dato) = "+ mes +";")
-        .ToListAsync();
-
-    if (datos.Count == 0)
-    {
-        return Results.NotFound("No se encontraron datos para la fecha especificada.");
+        return Results.Ok(response);
     }
-
-    var groupedData = datos
-         .GroupBy(d => d.codigo_parametro)
-         .Select(g => new DeviceData
-         {
-             ParameterCode = g.Key.ToString(),
-             ParameterName = g.FirstOrDefault()?.nombre_parametro ?? "",
-             ParameterUnit = g.FirstOrDefault()?.valor_numero?.ToString() ?? "",
-             ParameterAbbreviation = g.FirstOrDefault()?.nombre_parametro?.Substring(0, 4) ?? "", // Just an example
-             Values = new Values
-             {
-                 AvgData = new List<double> { g.Average(d => (double)d.valor_numero) }, // Promedio en una lista
-                 MinData = new List<double> { g.Min(d => (double)d.valor_numero) }, // Mínimo en una lista
-                 MaxData = new List<double> { g.Max(d => (double)d.valor_numero) }  // Máximo en una lista
-             }
-         }).ToList();
-
-    // Crear la respuesta final
-    var response = new DeviceDataResponse
+    catch (Exception ex)
     {
-        DeviceDates = datos.Select(d => d.fecha_dato.ToString("yyyy-MM-dd HH:mm:ss")).Distinct().ToList(),
-        DeviceData = groupedData
-    };
+        // Registrar el error
+        Console.WriteLine($"Error: {ex.Message}\n{ex.StackTrace}");
 
-    return Results.Ok(response);
+        return Results.Problem(detail: ex.Message, statusCode: 500);
+    }
 });
 
+app.MapGet("/sensores/porMes", async (DateTime fechaInicio, DateTime fechaFin, Sensors_db db) =>
+{
+    try
+    {
+        // La consulta SQL para obtener datos de sensores en un rango de meses
+        var sqlQuery = @"
+            SELECT 
+                ds.id, 
+                ds.codigo_parametro, 
+                ps.descripcion_corta, 
+                ds.nombre_parametro, 
+                ds.fecha_dato, 
+                ds.valor_numero, 
+                ps.unidad
+            FROM 
+                datos_sensores ds
+            JOIN 
+                parametros_sensores ps 
+                ON ds.codigo_parametro = ps.codigo_parametro
+            WHERE 
+                ds.fecha_dato >= date_trunc('month', @fechaInicio)
+                AND ds.fecha_dato < date_trunc('month', @fechaFin) + INTERVAL '1 month'";
 
+        // Configurar los parámetros SQL
+        var fechaInicioParam = new NpgsqlParameter("@fechaInicio", fechaInicio);
+        var fechaFinParam = new NpgsqlParameter("@fechaFin", fechaFin);
 
-app.UseAuthorization();
+        // Ejecutar la consulta y obtener los datos
+        var datos = await db.SensorDataResults
+            .FromSqlRaw(sqlQuery, fechaInicioParam, fechaFinParam)
+            .ToListAsync();
 
-app.MapControllers();
+        // Verificar si se encontraron datos
+        if (datos.Count == 0)
+        {
+            return Results.NotFound("No se encontraron datos para el rango de meses especificado.");
+        }
+
+        // Agrupar los datos por código de parámetro y calcular las estadísticas
+        var groupedData = datos
+            .GroupBy(d => d.codigo_parametro)
+            .Select(g => new DeviceData
+            {
+                CodigoParametro = g.Key.ToString(),
+                NombreParametro = g.FirstOrDefault()?.nombre_parametro ?? "",
+                UnidadParametro = g.FirstOrDefault()?.unidad ?? "",
+                AbreviacionParametro = g.FirstOrDefault()?.descripcion_corta?.Substring(0, 4) ?? "",
+                Values = new DeviceValues
+                {
+                    AvgData = new List<float> { (float)g.Where(d => d.valor_numero.HasValue).Average(d => d.valor_numero.Value) },
+                    MinData = new List<float> { (float)g.Where(d => d.valor_numero.HasValue).Min(d => d.valor_numero.Value) },
+                    MaxData = new List<float> { (float)g.Where(d => d.valor_numero.HasValue).Max(d => d.valor_numero.Value) }
+                }
+            }).ToList();
+
+        // Crear la respuesta con las fechas y los datos agrupados
+        var response = new DeviceDataResponse
+        {
+            DeviceDates = datos.Select(d => d.fecha_dato.ToString("yyyy-MM-dd HH:mm:ss")).Distinct().ToList(),
+            DeviceData = groupedData
+        };
+
+        // Retornar la respuesta con código de estado 200 (OK)
+        return Results.Ok(response);
+    }
+    catch (Exception ex)
+    {
+        // Registrar el error en la consola
+        Console.WriteLine($"Error: {ex.Message}\n{ex.StackTrace}");
+
+        // Retornar un problema con código de estado 500 (Error interno del servidor)
+        return Results.Problem(detail: ex.Message, statusCode: 500);
+    }
+});
+
 
 app.Run();
