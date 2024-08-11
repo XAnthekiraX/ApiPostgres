@@ -10,7 +10,6 @@ using System.Threading.Tasks;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -21,7 +20,6 @@ builder.Services.AddDbContext<Sensors_db>(options =>
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -34,7 +32,6 @@ app.MapGet("/sensores/{id}", async (int id, Sensors_db db) =>
 {
     try
     {
-        // Realiza el JOIN entre datos_sensores y parametros_sensores
         var datos = await db.datos_sensores
             .Join(db.parametros_sensores,
                   ds => ds.parametro_sensores_id,
@@ -47,7 +44,7 @@ app.MapGet("/sensores/{id}", async (int id, Sensors_db db) =>
                       ds.nombre_parametro,
                       ds.fecha_dato,
                       ds.valor_numero,
-                      ps.unidad // Asegúrate de que el nombre coincida con el nombre en el modelo
+                      ps.unidad 
                   })
             .Where(d => d.id == id)
             .ToListAsync();
@@ -63,7 +60,7 @@ app.MapGet("/sensores/{id}", async (int id, Sensors_db db) =>
             {
                 CodigoParametro = g.Key.ToString(),
                 NombreParametro = g.FirstOrDefault()?.nombre_parametro ?? "",
-                UnidadParametro = g.FirstOrDefault()?.unidad ?? "", // Usa la propiedad correcta
+                UnidadParametro = g.FirstOrDefault()?.unidad ?? "",
                 AbreviacionParametro = g.FirstOrDefault()?.descripcion_corta?.Substring(0, 4) ?? "",
                 Values = new DeviceValues
                 {
@@ -87,17 +84,14 @@ app.MapGet("/sensores/{id}", async (int id, Sensors_db db) =>
     }
 });
 
-
 app.MapGet("/sensores/porRangoHoras", async (DateTime fecha, string horaInicio, string horaFin, Sensors_db db) =>
 {
-    // Validar los formatos de hora
     if (!TimeOnly.TryParse(horaInicio, out TimeOnly horaInicioOnly) ||
         !TimeOnly.TryParse(horaFin, out TimeOnly horaFinOnly))
     {
         return Results.BadRequest("Formato de hora inválido. Utiliza un formato válido como 'HH:MM:SS'.");
     }
 
-    // Combinar la fecha con las horas para crear DateTime
     DateTime fechaHoraInicio = fecha.Add(horaInicioOnly.ToTimeSpan());
     DateTime fechaHoraFin = fecha.Add(horaFinOnly.ToTimeSpan());
 
@@ -109,7 +103,6 @@ app.MapGet("/sensores/porRangoHoras", async (DateTime fecha, string horaInicio, 
             JOIN parametros_sensores ps ON ds.codigo_parametro = ps.codigo_parametro
             WHERE ds.fecha_dato BETWEEN @fechaHoraInicio AND @fechaHoraFin";
 
-        // Parámetros para el rango de fecha y horas
         var fechaHoraInicioParam = new NpgsqlParameter("@fechaHoraInicio", fechaHoraInicio);
         var fechaHoraFinParam = new NpgsqlParameter("@fechaHoraFin", fechaHoraFin);
 
@@ -148,7 +141,6 @@ app.MapGet("/sensores/porRangoHoras", async (DateTime fecha, string horaInicio, 
     }
     catch (Exception ex)
     {
-        // Registrar el error
         Console.WriteLine($"Error: {ex.Message}\n{ex.StackTrace}");
 
         return Results.Problem(detail: ex.Message, statusCode: 500);
@@ -168,7 +160,6 @@ app.MapGet("/sensores/porRangoFecha", async (DateTime startDate, DateTime endDat
             JOIN parametros_sensores ps ON ds.codigo_parametro = ps.codigo_parametro
             WHERE  fecha_dato BETWEEN @startDate AND @endDate";
 
-        // Verificar el valor del parámetro
         var dateStartParam = new NpgsqlParameter("@startDate", startDateUtc);
         var dateEndParam = new NpgsqlParameter("@endDate", endDateUtc);
 
@@ -207,7 +198,6 @@ app.MapGet("/sensores/porRangoFecha", async (DateTime startDate, DateTime endDat
     }
     catch (Exception ex)
     {
-        // Registrar el error
         Console.WriteLine($"Error: {ex.Message}\n{ex.StackTrace}");
 
         return Results.Problem(detail: ex.Message, statusCode: 500);
@@ -246,7 +236,6 @@ app.MapGet("/sensores/porSemana", async (DateTime fechaInicio, Sensors_db db) =>
                 ds.fecha_dato >= wr.week_start 
                 AND ds.fecha_dato < wr.week_end";
 
-        // Verificar el valor del parámetro
         var dateStartParam = new NpgsqlParameter("@fechaInicio", fechaInicioUtc);
 
         var datos = await db.SensorDataResults
@@ -284,7 +273,6 @@ app.MapGet("/sensores/porSemana", async (DateTime fechaInicio, Sensors_db db) =>
     }
     catch (Exception ex)
     {
-        // Registrar el error
         Console.WriteLine($"Error: {ex.Message}\n{ex.StackTrace}");
 
         return Results.Problem(detail: ex.Message, statusCode: 500);
@@ -295,7 +283,6 @@ app.MapGet("/sensores/porMes", async (DateTime fechaInicio, DateTime fechaFin, S
 {
     try
     {
-        // La consulta SQL para obtener datos de sensores en un rango de meses
         var sqlQuery = @"
             SELECT 
                 ds.id, 
@@ -314,22 +301,18 @@ app.MapGet("/sensores/porMes", async (DateTime fechaInicio, DateTime fechaFin, S
                 ds.fecha_dato >= date_trunc('month', @fechaInicio)
                 AND ds.fecha_dato < date_trunc('month', @fechaFin) + INTERVAL '1 month'";
 
-        // Configurar los parámetros SQL
         var fechaInicioParam = new NpgsqlParameter("@fechaInicio", fechaInicio);
         var fechaFinParam = new NpgsqlParameter("@fechaFin", fechaFin);
 
-        // Ejecutar la consulta y obtener los datos
         var datos = await db.SensorDataResults
             .FromSqlRaw(sqlQuery, fechaInicioParam, fechaFinParam)
             .ToListAsync();
 
-        // Verificar si se encontraron datos
         if (datos.Count == 0)
         {
             return Results.NotFound("No se encontraron datos para el rango de meses especificado.");
         }
 
-        // Agrupar los datos por código de parámetro y calcular las estadísticas
         var groupedData = datos
             .GroupBy(d => d.codigo_parametro)
             .Select(g => new DeviceData
@@ -346,22 +329,17 @@ app.MapGet("/sensores/porMes", async (DateTime fechaInicio, DateTime fechaFin, S
                 }
             }).ToList();
 
-        // Crear la respuesta con las fechas y los datos agrupados
         var response = new DeviceDataResponse
         {
             DeviceDates = datos.Select(d => d.fecha_dato.ToString("yyyy-MM-dd HH:mm:ss")).Distinct().ToList(),
             DeviceData = groupedData
         };
 
-        // Retornar la respuesta con código de estado 200 (OK)
         return Results.Ok(response);
     }
     catch (Exception ex)
     {
-        // Registrar el error en la consola
-        Console.WriteLine($"Error: {ex.Message}\n{ex.StackTrace}");
 
-        // Retornar un problema con código de estado 500 (Error interno del servidor)
         return Results.Problem(detail: ex.Message, statusCode: 500);
     }
 });
